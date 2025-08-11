@@ -1,10 +1,9 @@
-import random
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
 import os
+import random
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
-TOKEN = os.getenv("BOT_TOKEN")
-
+# Список карт
 cards = [
     # Старші Аркани
     {
@@ -489,7 +488,6 @@ def format_card_message(card):
         f"💡 Порада дня: {card['advice']}"
     )
 
-# Обробник команди /start - відправляє привітання і клавіатуру з кнопкою
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = ReplyKeyboardMarkup(
         [[KeyboardButton("Отримати карту дня")]],
@@ -500,17 +498,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=keyboard
     )
 
-# Обробник тексту з кнопки
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text == "Отримати карту дня":
-        card = random.choice(cards)
-        await update.message.reply_text(format_card_message(card))
+async def send_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    card = random.choice(cards)
+    await update.message.reply_text(format_card_message(card))
 
 def main():
-    app = Application.builder().token(TOKEN).build()
+    token = os.getenv("BOT_TOKEN")
+    if not token:
+        raise ValueError("Не знайдено токен бота в змінній BOT_TOKEN")
+    app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("card", handle_text))  # щоб працювала і команда /card
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(CommandHandler("card", send_card))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, send_card))
     app.run_polling()
 
 if __name__ == "__main__":

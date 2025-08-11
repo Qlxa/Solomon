@@ -1,7 +1,9 @@
 import random
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
 import os
+
+TOKEN = os.getenv("BOT_TOKEN")
 
 cards = [
     # Старші Аркани
@@ -487,38 +489,28 @@ def format_card_message(card):
         f"💡 Порада дня: {card['advice']}"
     )
 
-async def send_card_message(update, context):
-    card = random.choice(cards)
-    text = format_card_message(card)
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎴 Відкрити іншу карту", callback_data="new_card")]
-    ])
-    # Якщо це команда
-    if update.message:
-        await update.message.reply_text(text, reply_markup=keyboard)
-    # Якщо це callback (натискання кнопки)
-    elif update.callback_query:
-        await update.callback_query.answer()  # Підтверджуємо callback, щоб не було "loading..."
-        await update.callback_query.edit_message_text(text=text, reply_markup=keyboard)
+# Обробник команди /start - відправляє привітання і клавіатуру з кнопкою
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = ReplyKeyboardMarkup(
+        [[KeyboardButton("Отримати карту дня")]],
+        resize_keyboard=True
+    )
+    await update.message.reply_text(
+        "Привіт! Натисни кнопку нижче, щоб отримати карту дня.",
+        reply_markup=keyboard
+    )
 
-async def card(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await send_card_message(update, context)
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    if query.data == "new_card":
-        await send_card_message(update, context)
+# Обробник тексту з кнопки
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text == "Отримати карту дня":
+        card = random.choice(cards)
+        await update.message.reply_text(format_card_message(card))
 
 def main():
-    TOKEN = os.getenv("BOT_TOKEN")
-    if not TOKEN:
-        raise ValueError("Не знайдено токен бота в змінній оточення BOT_TOKEN")
-
     app = Application.builder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("card", card))
-    app.add_handler(CallbackQueryHandler(button_handler))
-
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("card", handle_text))  # щоб працювала і команда /card
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.run_polling()
 
 if __name__ == "__main__":

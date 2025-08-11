@@ -1,13 +1,7 @@
 import os
 import random
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
-from dotenv import load_dotenv
-
-# Завантажуємо змінні оточення
-load_dotenv()
-
-token = os.getenv("BOT_TOKEN")
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 # Список карт
 cards = [
@@ -564,23 +558,46 @@ cards = [
     }
 ]
 
-# Команда /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Привіт! Натисни /card, щоб отримати випадкову карту 📜"
+# Формування повідомлення
+def format_card_message(card):
+    return (
+        f"🃏 **{card['name']}**\n"
+        f"✨ Ключові слова: {card['keywords']}\n"
+        f"📜 Значення: {card['meaning']}\n"
+        f"💡 Порада дня: {card['advice']}"
     )
 
-# Команда /card
-async def card(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    card = random.choice(cards)
-    text = f"**{card['name']}**\n\n{card['advice']}"
-    await update.message.reply_photo(photo=card['image'], caption=text, parse_mode="Markdown")
+# Команда /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = ReplyKeyboardMarkup(
+        [[KeyboardButton("Отримати карту дня")]],
+        resize_keyboard=True
+    )
+    await update.message.reply_text(
+        "Привіт! Натисни кнопку нижче, щоб отримати карту дня.",
+        reply_markup=keyboard
+    )
 
+# Відправка випадкової карти
+async def send_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    card = random.choice(cards)
+    await update.message.reply_photo(
+        photo=card['image'],
+        caption=format_card_message(card),
+        parse_mode="Markdown"
+    )
+
+# Головна функція
 def main():
+    token = os.getenv("BOT_TOKEN")
+    if not token:
+        raise ValueError("Не знайдено токен бота в змінній BOT_TOKEN")
+
     app = Application.builder().token(token).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("card", card))
+    app.add_handler(CommandHandler("card", send_card))
+    app.add_handler(MessageHandler(filters.Regex("^Отримати карту дня$"), send_card))
 
     print("Бот запущений...")
     app.run_polling()

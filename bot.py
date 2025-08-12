@@ -1,5 +1,6 @@
 import os
 import random
+import asyncio
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from cards import cards  # імпортуємо список карт з іншого файлу
@@ -43,16 +44,17 @@ def main():
 
     app = Application.builder().token(token).build()
 
-    # Видаляємо вебхук перед запуском polling
-    async def on_startup(app):
-        await app.bot.delete_webhook(drop_pending_updates=True)
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("card", send_card))
     app.add_handler(MessageHandler(filters.Regex("^Отримати карту дня$"), send_card))
 
-    print("Бот запущений...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES, poll_interval=1.0, on_startup=on_startup)
+    async def run():
+        # Видаляємо вебхук і скидаємо старі апдейти перед polling
+        await app.bot.delete_webhook(drop_pending_updates=True)
+        print("Бот запущений...")
+        await app.run_polling(allowed_updates=Update.ALL_TYPES, poll_interval=1.0)
+
+    asyncio.run(run())
 
 if __name__ == "__main__":
     main()

@@ -561,10 +561,10 @@ cards = [
 # Формування повідомлення
 def format_card_message(card):
     return (
-        f"🃏 **{card['name']}**\n"
-        f"✨ Ключові слова: {card['keywords']}\n"
-        f"📜 Значення: {card['meaning']}\n"
-        f"💡 Порада дня: {card['advice']}"
+        f"🃏**{card['name']}**\n\n"
+        f"✨**Ключові слова:** {card['keywords']}\n\n"
+        f"📜**Значення:** {card['meaning']}\n\n"
+        f"💡 **Порада дня:** {card['advice']}"
     )
 
 # Команда /start
@@ -604,3 +604,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

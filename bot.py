@@ -2,6 +2,7 @@ import os
 import random
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.constants import ParseMode
 
 # Список карт
 cards = [
@@ -558,14 +559,18 @@ cards = [
     }
 ]
 
-# Формування повідомлення
-def format_card_message(card):
+def format_card_message(card: dict) -> str:
     return (
-        f"🃏<b>{card['name']}</b>\n\n"
-        f"✨<b>Ключові слова:</b> {card['keywords']}\n\n"
-        f"📜<b>Значення:</b> {card['meaning']}\n\n"
-        f"💡 <b>Порада дня:</b> {card['advice']}"
+        f"🃏 <b>{card['name']}</b>\n\n"
+        f"✨ <b>Ключові слова:</b>\n{card['keywords']}\n\n"
+        f"📜 <b>Значення:</b>\n{card['meaning']}\n\n"
+        f"💡 <b>Порада дня:</b>\n{card['advice']}"
     )
+
+# Приклад відправки в обробнику (async для python-telegram-bot v20+)
+async def send_card(update, context, card):
+    text = format_card_message(card)
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):

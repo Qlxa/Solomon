@@ -1,18 +1,23 @@
 import os
 import random
+import re
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.constants import ParseMode
 from cards import cards  # імпортуємо список карт з іншого файлу
 
-card = random.choice(cards)
+# Функція для екранування спецсимволів MarkdownV2
+def escape_markdown(text: str) -> str:
+    return re.sub(r'([_*\[\]()~`>#+\-=|{}.!])', r'\\\1', text)
 
 # Формування повідомлення
 def format_card_message(card):
     return (
-        f"🃏**{card['name']}**\n\n"
-        f"✨**Ключові слова:** {card['keywords']}\n\n"
-        f"📜**Значення:** {card['meaning']}\n\n"
-        f"💡 **Порада дня:** {card['advice']}"
+        f"🎴\n\n"
+        f"*{escape_markdown(card['name'])}*\n\n"
+        f"✨ *Ключові слова:* {escape_markdown(card['keywords'])}\n\n"
+        f"📜 *Значення:* {escape_markdown(card['meaning'])}\n\n"
+        f"💡 *Порада дня:* {escape_markdown(card['advice'])}"
     )
 
 # Команда /start
@@ -32,7 +37,7 @@ async def send_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_photo(
         photo=card['image'],
         caption=format_card_message(card),
-        parse_mode="Markdown"
+        parse_mode=ParseMode.MARKDOWN_V2
     )
 
 # Головна функція

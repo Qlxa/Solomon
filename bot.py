@@ -1,17 +1,35 @@
 import os
 import random
+import logging
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, PreCheckoutQueryHandler
+from telegram import (
+    Update, ReplyKeyboardMarkup, KeyboardButton,
+    InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
+)
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler,
+    ContextTypes, filters, PreCheckoutQueryHandler
+)
 from telegram.error import Forbidden, BadRequest
 from cards import cards  # список карт
 
 # ------------------- НАЛАШТУВАННЯ -------------------
-trial_period_days = 3   # пробний період у днях
-subscription_cost = 100 # вартість підписки у ⭐️
+trial_period_days = 3            # пробний період у днях
+subscription_cost_stars = 100    # вартість підписки у ⭐️
+subscription_days = 30           # тривалість підписки у днях
 PROVIDER_TOKEN = os.getenv("PROVIDER_TOKEN")  # токен для платежів Telegram
+
+# Telegram Stars рахуються у мікроодиницях (1⭐️ = 100_000)
+subscription_cost_amount = subscription_cost_stars * 100_000
+
+# ------------------- ЛОГІНГ -------------------
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # ------------------- БАЗА ДАНИХ -------------------
 def get_db_connection():
@@ -53,14 +71,29 @@ def is_subscription_active(user_id):
 def give_trial(user_id):
     conn = get_db_connection()
     cur = conn.cursor()
-    start_date = datetime.now()
+    start_date = datetime.now().date()
     end_date = start_date + timedelta(days=trial_period_days)
     cur.execute("""
         INSERT INTO subscriptions (user_id, start_date, end_date, blocked)
         VALUES (%s, %s, %s, FALSE)
         ON CONFLICT (user_id) DO UPDATE 
         SET start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date, blocked = FALSE
-    """, (user_id, start_date.date(), end_date.date()))
+    """, (user_id, start_date, end_date))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def activate_subscription(user_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    start_date = datetime.now().date()
+    end_date = start_date + timedelta(days=subscription_days)
+    cur.execute("""
+        INSERT INTO subscriptions (user_id, start_date, end_date, blocked)
+        VALUES (%s, %s, %s, FALSE)
+        ON CONFLICT (user_id) DO UPDATE 
+        SET start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date, blocked = FALSE
+    """, (user_id, start_date, end_date))
     conn.commit()
     cur.close()
     conn.close()
@@ -75,17 +108,19 @@ def format_card_message(card):
     )
 
 def payment_keyboard():
-    return InlineKeyboardMarkup([[InlineKeyboardButton(text="Оплатити 100 ⭐️ / 30 днів", pay=True)]])
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(text=f"Оплатити {subscription_cost_stars} ⭐️ / {subscription_days} днів", pay=True)
+    ]])
 
 async def send_invoice_handler(context, chat_id):
-    prices = [LabeledPrice(label="Підписка на 30 днів", amount=subscription_cost)]
+    prices = [LabeledPrice(label=f"Підписка на {subscription_days} днів", amount=subscription_cost_amount)]
     await context.bot.send_invoice(
         chat_id=chat_id,
         title="Підписка на Таро-бота",
-        description="Доступ до карт Таро протягом 30 днів",
+        description=f"Доступ до карт Таро протягом {subscription_days} днів",
         payload="subscription_payment",
         provider_token=PROVIDER_TOKEN,
-        currency="XTR",
+        currency="XTR",  # валюта для Telegram Stars
         prices=prices,
         start_parameter="subscription-payment",
         reply_markup=payment_keyboard()
@@ -97,7 +132,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not is_subscription_active(user_id):
         give_trial(user_id)
-        await update.message.reply_text("Вам надано 3 дні безкоштовного користування 🌟")
+        await update.message.reply_text(f"Вам надано {trial_period_days} дні безкоштовного користування 🌟")
     else:
         await update.message.reply_text("Ваша підписка активна ✅")
 
@@ -107,8 +142,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def send_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     if not is_subscription_active(user_id):
-        await update.message.reply_text("⛔ Ваша підписка неактивна. Потрібно оформити донат.")
-        await send_invoice_handler(context, update.message.chat_id)
+        await update.message.reply_text(
+            "⛔ Ваша підписка неактивна.\nНатисніть кнопку нижче для активації:",
+            reply_markup=payment_keyboard()
+        )
         return
 
     card = random.choice(cards)
@@ -118,7 +155,7 @@ async def send_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption=format_card_message(card),
             parse_mode="Markdown"
         )
-    except Forbidden:
+    except (Forbidden, BadRequest):
         mark_user_as_blocked(user_id)
 
 async def pre_checkout_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -127,20 +164,8 @@ async def pre_checkout_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def successful_payment_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    start_date = datetime.now()
-    end_date = start_date + timedelta(days=30)
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO subscriptions (user_id, start_date, end_date, blocked)
-        VALUES (%s, %s, %s, FALSE)
-        ON CONFLICT (user_id) DO UPDATE 
-        SET start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date, blocked = FALSE
-    """, (user_id, start_date, end_date))
-    conn.commit()
-    cur.close()
-    conn.close()
-    await update.message.reply_text("✅ Дякуємо за оплату! Ваша підписка активована на 30 днів.")
+    activate_subscription(user_id)
+    await update.message.reply_text(f"✅ Дякуємо за оплату! Ваша підписка активована на {subscription_days} днів.")
 
 # ------------------- ГОЛОВНА -------------------
 def main():
@@ -155,7 +180,7 @@ def main():
     app.add_handler(PreCheckoutQueryHandler(pre_checkout_handler))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_handler))
 
-    print("Бот запущений...")
+    logger.info("Бот запущений...")
     app.run_polling()
 
 if __name__ == "__main__":

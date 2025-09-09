@@ -10,15 +10,15 @@ from telegram import (
 )
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
-    ContextTypes, filters, PreCheckoutQueryHandler
+    ContextTypes, filters, PreCheckoutQueryHandler, CallbackQueryHandler
 )
 from telegram.error import Forbidden, BadRequest
 from cards import cards  # список карт
 
 # ------------------- НАЛАШТУВАННЯ -------------------
-trial_period_days = 3            # пробний період у днях
-subscription_cost_stars = 100    # вартість підписки у ⭐️
-subscription_days = 30           # тривалість підписки у днях
+trial_period_days = 3         # пробний період у днях
+subscription_cost_stars = 100  # вартість підписки у ⭐️
+subscription_days = 30         # тривалість підписки у днях
 PROVIDER_TOKEN = os.getenv("PROVIDER_TOKEN")  # токен для платежів Telegram
 
 # Telegram Stars рахуються у мікроодиницях (1⭐️ = 100_000)
@@ -98,7 +98,7 @@ def activate_subscription(user_id):
     cur.close()
     conn.close()
 
-# ------------------- ФУНКЦІЇ -------------------
+# ------------------- ФУНКЦІЇ КЛАВІАТУРИ -------------------
 def format_card_message(card):
     return (
         f"🃏**{card['name']}**\n\n"
@@ -106,6 +106,11 @@ def format_card_message(card):
         f"📜**Значення:** {card['meaning']}\n\n"
         f"💡 **Порада дня:** {card['advice']}"
     )
+
+def main_keyboard():
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("Отримати карту дня", callback_data="get_card")
+    ]])
 
 def payment_keyboard():
     return InlineKeyboardMarkup([[
@@ -120,7 +125,7 @@ async def send_invoice_handler(context, chat_id):
         description=f"Доступ до карт Таро протягом {subscription_days} днів",
         payload="subscription_payment",
         provider_token=PROVIDER_TOKEN,
-        currency="XTR",  # валюта для Telegram Stars
+        currency="XTR",
         prices=prices,
         start_parameter="subscription-payment",
         reply_markup=payment_keyboard()
@@ -136,13 +141,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Ваша підписка активна ✅")
 
-    keyboard = ReplyKeyboardMarkup([[KeyboardButton("Отримати карту дня")]], resize_keyboard=True)
-    await update.message.reply_text("Привіт! Натисни кнопку нижче, щоб отримати карту дня.", reply_markup=keyboard)
+    await update.message.reply_text("Привіт! Натисни кнопку нижче, щоб отримати карту дня.", reply_markup=main_keyboard())
 
 async def send_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
+    user_id = update.effective_user.id
+
     if not is_subscription_active(user_id):
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             "⛔ Ваша підписка неактивна.\nНатисніть кнопку нижче для активації:",
             reply_markup=payment_keyboard()
         )
@@ -150,13 +155,23 @@ async def send_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     card = random.choice(cards)
     try:
-        await update.message.reply_photo(
+        await update.effective_message.reply_photo(
             photo=card['image'],
             caption=format_card_message(card),
             parse_mode="Markdown"
         )
     except (Forbidden, BadRequest):
         mark_user_as_blocked(user_id)
+        logger.warning(f"Failed to send photo to user {user_id}. Marking as blocked.")
+        await update.effective_message.reply_text("Не вдалося надіслати фото. Можливо, бот заблокований вами.")
+
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "get_card":
+        await send_card(update, context)
 
 async def pre_checkout_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.pre_checkout_query
@@ -175,8 +190,8 @@ def main():
 
     app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("card", send_card))
-    app.add_handler(MessageHandler(filters.Regex("^Отримати карту дня$"), send_card))
+    app.add_handler(CommandHandler("card", send_card)) # Залишив цю команду для тестування
+    app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(PreCheckoutQueryHandler(pre_checkout_handler))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_handler))
 

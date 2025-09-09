@@ -114,7 +114,7 @@ def main_keyboard():
 
 def payment_keyboard():
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton(text=f"Оплатити {subscription_cost_stars} ⭐️ / {subscription_days} днів", pay=True)
+        InlineKeyboardButton(text=f"Оплатити {subscription_cost_stars} ⭐️ / {subscription_days} днів", callback_data="pay_stars")
     ]])
 
 async def send_invoice_handler(context, chat_id):
@@ -127,8 +127,7 @@ async def send_invoice_handler(context, chat_id):
         provider_token=PROVIDER_TOKEN,
         currency="XTR",
         prices=prices,
-        start_parameter="subscription-payment",
-        reply_markup=payment_keyboard()
+        start_parameter="subscription-payment"
     )
 
 # ------------------- ОБРОБНИКИ -------------------
@@ -172,6 +171,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if query.data == "get_card":
         await send_card(update, context)
+    elif query.data == "pay_stars":
+        await send_invoice_handler(context, query.message.chat_id)
+
 
 async def pre_checkout_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.pre_checkout_query
@@ -190,7 +192,7 @@ def main():
 
     app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("card", send_card)) # Залишив цю команду для тестування
+    app.add_handler(CommandHandler("card", send_card))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(PreCheckoutQueryHandler(pre_checkout_handler))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_handler))
